@@ -1,0 +1,280 @@
+1) Verificar normalidad con Shapiro-Wilk, para cada variable (hombre, mujer)
+
+shapiro_test_male <- shapiro.test(height_data$Height[height_data$Sex == "Male"])
+shapiro_test_female <- shapiro.test(height_data$Height[height_data$Sex == "Female"])
+
+#Otra opción podría ser Kolmogorov-Smirnov, es más estricto:
+
+ks.test(height_data$Height[height_data$Sex == "Male"], "pnorm", mean = mean(height_data$Height), sd = sd(height_data$Height))
+
+
+2) QQ Plots - Graficar normalidad
+ggplot(height_data, aes(sample = Height)) +
+  geom_qq() + #Grafica cuantiles observados vs esperados bajo normalidad
+  geom_qq_line() + #Linea de referencia de normalidad
+  facet_wrap(~Sex) + #Crear gráficos separados para cada variable
+  labs(title = "QQ Plots for Normality Check by Sex")
+
+
+3) Homogeneidad de varianza con Levene's test - Verifica si la varianza es igual
+levene_test <- leveneTest(Height ~ Sex, data = height_data)
+
+print(levene_test)
+#
+
+4) Realizar t-test para comprar las medias y probar si la diferencia entre sexos es significativa. 
+
+t_test_result <- t.test(Height ~ Sex, data = height_data)
+summary(t_test_result)
+
+
+5) Ajustar un modelo lineal, dónde sexo es la variable predictoria (indpendiente).
+lm_model <- lm(Height ~ Sex, data = height_data)
+summary(lm_model)
+
+##########################################################################################################################################
+
+############PARA COMPARAR DOS VARIABLES, EJEMPLO, LA ABUNDANCIA DEPENDIENDO DEL HABITAT (BOSQUE PRIMARIO, BOSQUE SECUNDARIO)#############
+
+1) Abundancia de arañas por habitat
+#función facet_grit va a organizar los graficos en una misma impresión. Es decir, tres especies diferentes graficadas juntas####
+
+bp <- ggplot(ctenid1, aes(x=Habitat, y=Abundance, group=Habitat)) + 
+  geom_boxplot(aes(fill=Habitat))+ facet_grid(. ~ Species)+ theme(text = element_text(size = 15),
+                                                                  legend.title=element_text(size=12), 
+                                                                  legend.text=element_text(size=12))
+
+bp
+
+2) Filtrar los datos, dejando unicamente la especie "Spinoctenus escalerete"
+spinoctenus_data <- ctenid1 %>% filter(Species == "Spinoctenus escalerete")
+
+3) Separar los datos por habitat, Para que los datos de cada hábitat estén en formatos separados, listos para el t-test y otras pruebas.
+test_primary <- spinoctenus_data %>% filter(Habitat == "primary") %>% pull(Abundance) #Usa pull(Abundance) para extraer solo la columna de abundancia como un vector.
+test_secondary <- spinoctenus_data %>% filter(Habitat == "secondary") %>% pull(Abundance)
+
+4) Validar normalidad
+shapiro_primary <- shapiro.test(test_primary)
+shapiro_secondary <- shapiro.test(test_secondary)
+print(shapiro_primary)
+print(shapiro_secondary)
+
+
+# QQ Plots - Visualizar normalidad de los residuos
+ggplot(spinoctenus_data, aes(sample = Abundance)) +
+  geom_qq() +
+  geom_qq_line() +
+  facet_wrap(~Species) +
+  labs(title = "QQ Plots for Normality Check by Sex")
+
+# Checking homogeneity of variances with Levene's test
+levene_test <- leveneTest(Abundance ~ Habitat, data = spinoctenus_data)
+print(levene_test)
+
+# Conducting t-test (assuming equal variances) - SÓLO SI SON NORMALES Y HAY HOMOGENEIDAD DE VARIANZA.
+t_test <- t.test(test_primary, test_secondary, var.equal = TRUE)
+print(t_test)
+
+# Conducting Mann-Whitney U test (Wilcoxon rank sum test in R) - SI NO HAY NORMALIDAD.
+mann_whitney <- wilcox.test(test_primary, test_secondary, exact = FALSE)
+print(mann_whitney)
+
+# Obtener coeficientes en formato ordenado
+model_results <- tidy(lm_model, conf.int =T)
+model_results
+
+📌 RECETA PARA COMPARAR DOS GRUPOS EN R
+🔹 PASO 1: Explorar los datos
+Antes de hacer cualquier prueba, inspeccionamos los datos.
+
+head(ctenid1)  # Ver primeras filas
+str(ctenid1)   # Ver estructura de variables
+summary(ctenid1) # Resumen estadístico
+✅ ¿Por qué se hace?
+Para ver si las variables están en el formato correcto (factor o numérico).
+
+🔹 PASO 2: Filtrar los datos según la variable categórica
+
+spinoctenus_data <- ctenid1 %>% filter(Species == "Spinoctenus escalerete")
+✅ ¿Por qué se hace?
+Para analizar solo una especie en lugar de mezclar todas.
+
+🔹 PASO 3: Separar los grupos
+
+test_primary <- spinoctenus_data %>% filter(Habitat == "primary") %>% pull(Abundance)
+test_secondary <- spinoctenus_data %>% filter(Habitat == "secondary") %>% pull(Abundance)
+✅ ¿Por qué se hace?
+Para que los datos estén listos para compararlos en el T-test o Mann-Whitney.
+
+🔹 PASO 4: Comprobar Normalidad
+📌 Prueba de Shapiro-Wilk
+
+shapiro.test(test_primary)
+shapiro.test(test_secondary)
+✅ Interpretación:
+
+p > 0.05 → Los datos son normales ✅
+
+p < 0.05 → Los datos NO son normales ❌ (usar Mann-Whitney U)
+
+📌 Alternativa: Ver distribución con gráfico
+
+ggplot(spinoctenus_data, aes(x = Abundance, fill = Habitat)) +
+  geom_histogram(alpha = 0.6, position = "identity")
+✅ ¿Por qué se hace?
+Para validar la distribución visualmente.
+
+🔹 PASO 5: Comprobar Homogeneidad de Varianzas
+📌 Prueba de Levene
+
+leveneTest(Abundance ~ Habitat, data = spinoctenus_data)
+✅ Interpretación:
+
+p > 0.05 → Asumimos varianzas iguales ✅
+
+p < 0.05 → Varianzas diferentes ❌ (usar Welch’s t-test)
+
+🔹 PASO 6: Elegir la Prueba Estadística Correcta
+📌 Opción 1: T-test (si hay normalidad)
+
+t.test(test_primary, test_secondary, var.equal = TRUE)  # Varianzas iguales
+t.test(test_primary, test_secondary, var.equal = FALSE) # Welch’s t-test si varianzas distintas
+✅ ¿Cuándo usarlo?
+
+Si los datos son normales y
+
+Si las varianzas son homogéneas (o corregimos con Welch’s t-test)
+
+📌 Opción 2: Mann-Whitney U (si NO hay normalidad)
+
+wilcox.test(test_primary, test_secondary, exact = FALSE)
+✅ ¿Cuándo usarlo?
+
+Si los datos NO son normales
+
+Compara rangos, no medias
+
+🔹 PASO 7: Reportar los resultados
+Después de correr el T-test o Mann-Whitney, debemos interpretar:
+
+p < 0.05 → Los hábitats son diferentes 🚀
+
+p > 0.05 → No hay diferencia significativa ❌
+
+📌 Ejemplo de reporte:
+
+El T-test mostró que la abundancia de Spinoctenus escalerete fue significativamente mayor en el hábitat primario que en el secundario (t = 2.5, p = 0.03).
+
+📌 RESUMEN DE LA RECETA
+Paso	                Acción	                              Código
+📊 Explorar datos	    Revisar estructura	              str(), summary()
+🎯 Filtrar datos	    Seleccionar especie	              filter(Species == "X")
+📌 Separar grupos	  Extraer valores por hábitat	      pull(Abundance)
+✅ Normalidad	      Shapiro-Wilk	                    shapiro.test()
+📏 Varianzas	        Levene Test	                      leveneTest()
+📈 T-test	            Comparar medias	                  t.test()
+📊 Mann-Whitney U	    Comparar distribuciones	          wilcox.test()
+
+
+#######################################################################################################################################################################
+
+#Para datos pareados, receta.
+
+1) Cargar datos
+data <- read.csv("paired")
+
+2) Check the structure of the data
+str(data)
+
+3) Comparar diferencias entre las mediciones
+data$diff <- data$after - data$before #Crea una nueva columna con la diferencia entre antes y después
+
+#Alternativa si hay más variables:
+data <- data %>%
+  mutate(diff = after - before)
+
+
+4) Check normality of differences using Shapiro-Wilk test
+shapiro.test(data$diff)
+
+5) Histogram and QQ plot for normality check
+
+par(mfrow=c(1,2)) #Divide la pantalla para ver dos gráficas en la misma impresión
+hist(data$diff, main="Histogram of Differences", xlab="Differences", col="lightblue", border="black")
+qqnorm(data$diff)
+qqline(data$diff, col="red")
+par(mfrow=c(1,1))
+
+6) Read the data - Volver a cargar los datos con un nuevo nombre
+df <- read.csv("paired t test.csv")
+
+#### Convert to long format - Convertir los datos a formato largo, ya que ggplot y otros paquetes funcionan mejor con formato largo.
+
+human.long <- df %>%
+  pivot_longer(cols = c(before, after), names_to = "group", values_to = "weight")
+
+7) Perform the paired t-test - Aplicar el t-test pareado, para comparar dos mediciones en los mismos individuos.
+stat.test <- t.test(df$before, df$after, paired = TRUE) %>%
+  tidy()
+print(stat.test)
+
+####### Comparación con una prueba T normal, no pareada.
+
+stat.test <- t.test(df$before, df$after, paired = FALSE) %>%
+  tidy()
+print(stat.test)
+
+#### Si los datos no son normales, hacer una prueba de Wilcoxon
+
+wilcox.test(df$before, df$after, paired = TRUE)
+
+
+8) ###SIN TIDY### ¿Por qué pasa esto??###
+stat.test <- t.test(df$before, df$after, paired = FALSE)
+print(stat.test)
+
+✅ ¿Qué pasa aquí?
+
+tidy() solo funciona sobre objetos que broom reconoce.
+
+t.test() genera una lista con statistic, parameter, p.value, etc.
+
+Sin tidy(), los resultados se imprimen como lista en lugar de tabla.
+
+✅ Solución alternativa:
+data.frame(statistic = stat.test$statistic, p_value = stat.test$p.value)
+
+
+9) Manually structure the test result to include group1 and group2
+stat.test <- stat.test %>%
+  mutate(group1 = "before", group2 = "after", y.position = max(human.long$weight) + 2)
+print(stat.test)
+✅ ¿Qué hace este código?
+
+Usa mutate() para agregar tres nuevas columnas a la tabla stat.test:
+
+group1 = "before" → Etiqueta para el primer grupo.
+
+group2 = "after" → Etiqueta para el segundo grupo.
+
+y.position = max(human.long$weight) + 2 → Define la posición donde se mostrará la anotación del p-valor en el gráfico.
+
+✅ ¿Por qué se hace?
+
+stat.test es el resultado del t-test pareado, pero no incluye información sobre los grupos comparados.
+
+y.position es necesario para posicionar correctamente el p-valor en el gráfico.
+
+10) Create the box plot
+bxp <- ggpaired(human.long, x = "group", y = "weight", 
+                order = c("before", "after"),
+                ylab = "Weight", xlab = "Groups")
+# Crea un gráfico de pares con ggpaired(), donde cada línea representa un individuo antes/después.
+# Visualiza el cambio dentro de cada individuo en lugar de solo mostrar promedios.
+
+11) Add p-value al gráfico
+bxp + 
+  stat_pvalue_manual(stat.test, label = "p.value", tip.length = 0) +
+  labs(subtitle = paste("Paired t-test: p =", signif(stat.test$p.value, 3)))
+
+bxp
