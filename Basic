@@ -1,0 +1,62 @@
+1. Leer csv
+
+data<-read.csv("descriptive statistics (1).csv")
+
+2. Resumen de los estadisticos
+
+summary(data)
+
+3. Revisar el tipo de variable
+str(data)
+
+4. Convertir una variable en un factor, ejemplo sex.
+
+data$Sex <- as.factor(data$Sex)
+
+5. Estadistica descriptiva - 
+
+height_summary <- height_data %>%
+  group_by(Sex) %>% #Agrupas los datos por sexo
+  summarise( #Crear resumen estadístico para cada grupo
+    count = n(), #Cuenta el numero de observaciones por grupo
+    mean = mean(Height, na.rm = TRUE), #Media, na.rm = TRUE que si hay valores NA, los ignore
+    median = median(Height, na.rm = TRUE),
+    sd = sd(Height, na.rm = TRUE), #Desviación estandar
+    min = min(Height, na.rm = TRUE),
+    max = max(Height, na.rm = TRUE)
+  )
+
+6. print(Mostrar los datos)
+
+7. Graficar datos
+
+# Histograma de todas las alturas
+ggplot(height_data, aes(x = Height)) + #binwidth el número de barras, entre más queda más separado
+  geom_histogram(binwidth = 5, fill = "blue", alpha = 0.6, color = "black") +
+  labs(title = "Histogram of Heights", x = "Height", y = "Frequency") +
+  theme_minimal()
+
+# Histograma separado por sexo
+ggplot(height_data, aes(x = Height, fill = Sex)) +
+  geom_histogram(binwidth = 5, alpha = 0.6, position = "identity", color = "black") +
+  labs(title = "Histogram of Heights by Sex", x = "Height", y = "Frequency") +
+  theme_minimal()
+
+# Boxplot de altura por sexo
+ggplot(height_data, aes(x = Sex, y = Height, fill = Sex)) +
+  geom_boxplot(alpha = 0.6) +
+  labs(title = "Boxplot of Height by Sex", x = "Sex", y = "Height") +
+  theme_minimal()
+
+# Boxplot con puntos
+ggplot(height_data, aes(x = Sex, y = Height, fill = Sex)) +
+  geom_boxplot(alpha = 0.6) +
+  geom_jitter(width = 0.2, alpha = 0.5, color = "black") +
+  labs(title = "Boxplot of Height with Dots", x = "Sex", y = "Height") +
+  theme_minimal()
+
+# Violin plot of height by sex
+ggplot(height_data, aes(x = Sex, y = Height, fill = Sex)) +
+  geom_violin(alpha = 0.6) +
+  labs(title = "Violin Plot of Height by Sex", x = "Sex", y = "Height") +
+  theme_minimal()
