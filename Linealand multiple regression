@@ -1,13 +1,7 @@
 ### Configuración del entorno de trabajo y carga de datos ###
 data <- read.csv("")
 
-### 1) Evaluar correlación de las variables con scatter plot, si las variables predictoras están muy correlacionadas (r > 0.7) se debe desacartar una.
-library(PerformanceAnalytics)
-chart.Correlation(data, histogram=TRUE, pch=19)  # Matriz de correlación
-
-#Otra opción escon pairs.panels (data[1:4])
-
-### 2) Montar el modelo de regresión lineal manual. Hacer variosmodelos, quitando variables predictores y combinandolas entre ellas.
+### 2) Montar el modelo de regresión lineal manual. Hacer varios modelos, quitando variables predictores y combinandolas entre ellas.
 m1 <- lm(Abundance ~ av_litter_depth, data=data) #Es el mejor modelo por significancia.
 m2 <- lm(Abundance ~ trees_over_3m, data=data)
 m2.1 <- lm(Abundance ~ av_slope, data=data)
@@ -17,21 +11,6 @@ summary(m1)
 summary(m2)
 summary(m2.1)
 summary(m3)
-
-#### 3) AIC de todos los modelos - Menor AIC es el mejor.
-#MODEL SELECTION forward and backward
-mfull <- lm(Abundance ~ canopy_cover + av_slope + trees_over_3m + av_litter_depth, data=data_scaled)
-step <- stepAIC(mfull, trace = FALSE) #Hacer el forwart y reverse o both (ambos).
-#seleccionar mejor modelo y hacerlo.
-best <- lm(Abundance ~ av_slope + av_litter_depth, data=data_scaled)
-summary(best)
-step$anova
-step
-
-# Model selection using AICc (MuMIn package) - confirmar
-options(na.action = "na.fail")  # Required for dredge function
-model_selection <- dredge(mfull, rank = "AICc") #Ranquearlos modelos por el AICc (FUNCIÓN DREDGE)
-print(model_selection) 
 
 ### 4) ### Intervalos de confianza y visualización de la regresión - GRAFICAAAAA!!!
 library(ggplot2)
@@ -60,10 +39,106 @@ plot(m1) #Residuales vs ajustadospara verificar homocedasticidad. Escala de loca
 
 ############################################ Regresión lineal múltiple #########################################################
 
+### 1) Evaluar correlación de las variables con scatter plot, si las variables predictoras están muy correlacionadas (r > 0.7) se debe desacartar una.
+library(PerformanceAnalytics)
+chart.Correlation(data, histogram=TRUE, pch=19)  # Matriz de correlación
+#Otra opción para este tipo de  datos es:
+library(GGally)
+ggpairs(datos, lower = list(continuous = "smooth"),
+        diag = list(continuous = "barDiag"), axisLabels = "none")
+
+#Otra opción es con 
+pairs.panels (data[1:4])
+#Otra opción es calcular por aparte Pearson:
+round(cor(x = datos, method = "pearson"), 3)
+#Y graficar:
+library(psych)
+multi.hist(x = datos, dcol = c("blue", "red"), dlty = c("dotted", "solid"),
+           main = "")
+
+### 2) Generar el modelo: Manual, por ejemplo, Hacer varios modelos, quitando variables predictores y combinandolas entre ellas.
 m4 <- lm(Abundance ~ canopy_cover + av_slope + trees_over_3m + av_litter_depth, data=data)
 summary(m4) 
 
-# Verificación de supuestos del modelo
+### 3) Seleccionar los mejores predictores con stepwise mixto. 
+### Selección de modelo, primero realizar el modelo con todas las variables, el full, sobre este correr AIC
+library(MASS)
+mfull <- lm(Abundance ~ canopy_cover + av_slope + trees_over_3m + av_litter_depth, data=data_scaled)
+step <- stepAIC(mfull, trace = FALSE)
+step$anova
+step
+# Otra opción es solo: 
+step(object = modelo, direction = "both", trace = 1) #Aquí al final me da el mejor modelo, entonces le damos summary
+modelo <- (lm(formula = esp_vida ~ habitantes + asesinatos + universitarios +
+              heladas, data = datos))
+summary(modelo)
+
+# Selección basada en AICc - AICc es para muetras pequeñas y muy eficiente para datos biologicos.
+library(MuMIn)
+options(na.action = "na.fail")
+model_selection <- dredge(mfull, rank = "AICc") #Ranquearlos modelos por el AICc (FUNCIÓN DREDGE)
+print(model_selection)
+
+#Mejor modelo basado en AICc
+best_model <- get.models(model_selection, subset = 1)[[1]]
+summary(best_model)
+
+
+### 4) Verificación de supuestos del modelo
+#Evaluarlo graficamente para cada uno de los supuestos: 1. Que se cumpla linealidad para todos los predictores (Distribución normal delos residuos).
+library(ggplot2)
+library(gridExtra)
+plot1 <- ggplot(data = datos, aes(habitantes, modelo$residuals)) +
+    geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) +
+    theme_bw()
+plot2 <- ggplot(data = datos, aes(asesinatos, modelo$residuals)) +
+    geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) +
+    theme_bw()
+plot3 <- ggplot(data = datos, aes(universitarios, modelo$residuals)) +
+    geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) +
+    theme_bw()
+plot4 <- ggplot(data = datos, aes(heladas, modelo$residuals)) +
+    geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) +
+    theme_bw()
+grid.arrange(plot1, plot2, plot3, plot4)
+
+#Otra opción:
+# Visualización de residuos - Residuals vs. Fitted values
+library(ggplot2) 
+ggplot(validation_data, aes(.fitted, .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  ggtitle("Residuals vs Fitted Values (Multiple Regression)") #Interpretación: -Muestra cómo se distribuyen los residuos en relación con los valores ajustados (.fitted). -Supuesto clave: Los residuos deben estar distribuidos aleatoriamente alrededor de 0. -Si se observa un patrón: Indica que el modelo no está capturando bien la relación entre las variables (posible no linealidad o falta de alguna variable importante).
+
+# Distribución normal de los residuos del modelo.
+qqnorm(modelo$residuals)
+qqline(modelo$residuals)
+
+#Otra opción: Q-Q Plot - Ver linealidad de residuos
+ggplot(validation_data, aes(sample = .std.resid)) +
+  stat_qq() +
+  stat_qq_line() +
+  ggtitle("Q-Q Plot of Standardized Residuals")
+
+#Normalidad en los residuos con Shapiro
+shapiro.test(modelo$residuals)
+#Se presentan los residuos frente a los valores ajustados por el modelo. Distribucipon aleatoria en torno a cero para que haya homocedasticidad.
+
+ggplot(data = datos, aes(modelo$fitted.values, modelo$residuals)) +
+geom_point() +
+geom_smooth(color = "firebrick", se = FALSE) +
+geom_hline(yintercept = 0) +
+theme_bw()
+
+#Otra forma es verificar la heterocedasticidad con test de Breusch-Pagan (bptest) -  se usa para verificar si hay heterocedasticidad en un modelo de regresión, es decir, si la varianza de los errores no es constante. Hipótesis:H₀ (nula): Los residuos tienen varianza constante (homocedasticidad). H₁ (alternativa): Los residuos tienen varianza no constante (heterocedasticidad).
+library(lmtest)
+bptest(modelo)
+
+#Matriz de correlación entre los predictores del modelo
+library(corrplot)
+corrplot(cor(dplyr::select(datos, habitantes, asesinatos,universitarios,heladas)),
+         method = "number", tl.col = "black")
+
 par(mfrow=c(2,2))
 plot(m4)
 plot(m4, 4)  # Distancia de Cook, Distancia de Cook. La influencia del cook distance es significativa cuándo es mayor a 0,3. Muestra la distancia de Cook (identifica valores atípicos).
@@ -75,26 +150,6 @@ validation_data <- augment(m4) #augment(m4) toma el modelo de regresión (m4) y 
 #(.fitted), los residuos (.resid), los residuos estandarizados (.std.resid), la distancia de Cook (.cooksd), entre otros.Permite visualizar el ajuste del modelo 
 #y detectar posibles problemas, como valores atípicos o no cumplimiento de los supuestos.
 
-### Visualización de residuos - Residuals vs. Fitted values
-library(ggplot2) 
-ggplot(validation_data, aes(.fitted, .resid)) +
-  geom_point() +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  ggtitle("Residuals vs Fitted Values (Multiple Regression)") #Interpretación:
-
-#Muestra cómo se distribuyen los residuos en relación con los valores ajustados (.fitted).
-
-#Supuesto clave: Los residuos deben estar distribuidos aleatoriamente alrededor de 0.
-
-#Si se observa un patrón: Indica que el modelo no está capturando bien la relación entre las variables (posible no linealidad o falta de alguna variable importante).
-
-
-## Q-Q Plot - Ver linealidad de residuos
-
-ggplot(validation_data, aes(sample = .std.resid)) +
-  stat_qq() +
-  stat_qq_line() +
-  ggtitle("Q-Q Plot of Standardized Residuals")
 
 ## Cook's Distance plot
 ggplot(validation_data, aes(x = seq_along(.cooksd), y = .cooksd)) +
@@ -131,25 +186,7 @@ effect_plot(m4, pred = av_litter_depth, partial.residuals = TRUE, interval = TRU
 
 avPlots(m4) #Da las regresiones parciales para cada una de las variables (es decir, que las demás variables son constantes).
 
-### Selección de modelo ###
-library(MASS)
-mfull <- lm(Abundance ~ canopy_cover + av_slope + trees_over_3m + av_litter_depth, data=data_scaled)
-step <- stepAIC(mfull, trace = FALSE)
-step$anova
-step
-
-# Selección basada en AICc y BIC
-library(MuMIn)
-options(na.action = "na.fail")
-model_selection <- dredge(mfull, rank = "AICc") #Ranquearlos modelos por el AICc (FUNCIÓN DREDGE)
-print(model_selection)
-
-#Mejor modelo basado en AICc
-best_model <- get.models(model_selection, subset = 1)[[1]]
-summary(best_model)
-
-### Cálculo de R-cuadrado y contribución de variables ### ###R-squares### Calcular los R cuadrado parciales. En este caso se sabemos que el mejor modelo es la profundidad de hojarasca, 
-pero para este ejercicio se usará el modelo que incluye todas las variables, porque nuestroo mejor modelo sólo tiene una variable. No es lo correcto, pero es para el ejecicio.
+### Cálculo de R-cuadrado y contribución de variables ### ###R-squares### Calcular los R cuadrado parciales. En este caso se sabemos que el mejor modelo es la profundidad de hojarasca, pero para este ejercicio se usará el modelo que incluye todas las variables, porque nuestroo mejor modelo sólo tiene una variable. No es lo correcto, pero es para el ejecicio.
 
 library(rsq)
 rsq(mfull)
