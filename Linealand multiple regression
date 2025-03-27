@@ -1,0 +1,166 @@
+### Configuración del entorno de trabajo y carga de datos ###
+data <- read.csv("")
+
+### 1) Evaluar correlación de las variables con scatter plot, si las variables predictoras están muy correlacionadas (r > 0.7) se debe desacartar una.
+library(PerformanceAnalytics)
+chart.Correlation(data, histogram=TRUE, pch=19)  # Matriz de correlación
+
+#Otra opción escon pairs.panels (data[1:4])
+
+### 2) Montar el modelo de regresión lineal manual. Hacer variosmodelos, quitando variables predictores y combinandolas entre ellas.
+m1 <- lm(Abundance ~ av_litter_depth, data=data) #Es el mejor modelo por significancia.
+m2 <- lm(Abundance ~ trees_over_3m, data=data)
+m2.1 <- lm(Abundance ~ av_slope, data=data)
+m3 <- lm(Abundance ~ trees_over_3m + I(trees_over_3m^2), data=data) # Modelo cuadrático, poner cuadratica una variable
+
+summary(m1)
+summary(m2)
+summary(m2.1)
+summary(m3)
+
+#### 3) AIC de todos los modelos - Menor AIC es el mejor.
+#MODEL SELECTION forward and backward
+mfull <- lm(Abundance ~ canopy_cover + av_slope + trees_over_3m + av_litter_depth, data=data_scaled)
+step <- stepAIC(mfull, trace = FALSE) #Hacer el forwart y reverse o both (ambos).
+#seleccionar mejor modelo y hacerlo.
+best <- lm(Abundance ~ av_slope + av_litter_depth, data=data_scaled)
+summary(best)
+step$anova
+step
+
+# Model selection using AICc (MuMIn package) - confirmar
+options(na.action = "na.fail")  # Required for dredge function
+model_selection <- dredge(mfull, rank = "AICc") #Ranquearlos modelos por el AICc (FUNCIÓN DREDGE)
+print(model_selection) 
+
+### 4) ### Intervalos de confianza y visualización de la regresión - GRAFICAAAAA!!!
+library(ggplot2)
+predictions <- predict(m1, newdata=data, interval="confidence")
+data$predicted <- predictions[, "fit"]
+data$lwr <- predictions[, "lwr"] #INTERVALO DE CONFIANZA ARRIBA
+data$upr <- predictions[, "upr"] #Intervalo de confianza abajo
+
+ggplot(data, aes(x=av_litter_depth, y=Abundance)) + 
+  geom_point() +
+  geom_line(aes(y=predicted), color="red") +
+  geom_ribbon(aes(ymin=lwr, ymax=upr), alpha=0.2, fill="blue") +
+  ggtitle("Abundance vs. Average Litter Depth") +
+  xlab("Average Litter Depth") +
+  ylab("Abundance")
+
+###Asunciones del modelo####
+
+# Predicción con un nuevo dato - Tomando el modelo, se predice cuántas arañas se encontrarín a una profundidad dada (4).
+predict(m1, newdata = data.frame(av_litter_depth = 4))
+
+# Diagnóstico de los modelos - Para ploterar las asunciones imprimiendo dos columnas y dos filas. Aquí estoy ploteando residuales, residuales estandarizados y mirando normalidad con Q-Q
+par(mfrow=c(2,2))
+plot(m1) #Residuales vs ajustadospara verificar homocedasticidad. Escala de localidad vs residuales para verificar varianza constante. 
+#Leverage/Distancia de Cook: Identifica puntos influyentes.
+
+############################################ Regresión lineal múltiple #########################################################
+
+m4 <- lm(Abundance ~ canopy_cover + av_slope + trees_over_3m + av_litter_depth, data=data)
+summary(m4) 
+
+# Verificación de supuestos del modelo
+par(mfrow=c(2,2))
+plot(m4)
+plot(m4, 4)  # Distancia de Cook, Distancia de Cook. La influencia del cook distance es significativa cuándo es mayor a 0,3. Muestra la distancia de Cook (identifica valores atípicos).
+
+
+### Validación del modelo con `broom`
+library(broom)
+validation_data <- augment(m4) #augment(m4) toma el modelo de regresión (m4) y devuelve un data frame con los valores ajustados 
+#(.fitted), los residuos (.resid), los residuos estandarizados (.std.resid), la distancia de Cook (.cooksd), entre otros.Permite visualizar el ajuste del modelo 
+#y detectar posibles problemas, como valores atípicos o no cumplimiento de los supuestos.
+
+### Visualización de residuos - Residuals vs. Fitted values
+library(ggplot2) 
+ggplot(validation_data, aes(.fitted, .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  ggtitle("Residuals vs Fitted Values (Multiple Regression)") #Interpretación:
+
+#Muestra cómo se distribuyen los residuos en relación con los valores ajustados (.fitted).
+
+#Supuesto clave: Los residuos deben estar distribuidos aleatoriamente alrededor de 0.
+
+#Si se observa un patrón: Indica que el modelo no está capturando bien la relación entre las variables (posible no linealidad o falta de alguna variable importante).
+
+
+## Q-Q Plot - Ver linealidad de residuos
+
+ggplot(validation_data, aes(sample = .std.resid)) +
+  stat_qq() +
+  stat_qq_line() +
+  ggtitle("Q-Q Plot of Standardized Residuals")
+
+## Cook's Distance plot
+ggplot(validation_data, aes(x = seq_along(.cooksd), y = .cooksd)) +
+  geom_bar(stat = "identity") +
+  ggtitle("Cook's Distance") #Interpretación: La distancia de Cook indica qué observaciones influyen más en el modelo.
+#Valores altos: Indican puntos influyentes que podrían estar afectando las estimaciones de los coeficientes.
+#Regla general: Si la distancia de Cook es mayor a 1 o mucho mayor que el resto, conviene revisar esas observaciones.
+
+### Estandarización de variables predictoras ### -(center = TRUE, scale = TRUE) - Centrar el promedio y dividir por la variación estandar. Cuando realizamos regresión múltiple, 
+#las variables predictoras pueden estar en escalas muy diferentes.
+library(dplyr)
+data_scaled <- data %>% 
+  mutate(
+    canopy_cover = scale(canopy_cover, center = TRUE, scale = TRUE),
+    av_slope = scale(av_slope, center = TRUE, scale = TRUE),
+    trees_over_3m = scale(trees_over_3m, center = TRUE, scale = TRUE),
+    av_litter_depth = scale(av_litter_depth, center = TRUE, scale = TRUE)
+  )
+### Cambian las pendientes, para eso se estandarizaron las variables, SÓLO VARÍAN LAS PENDIENTES
+
+m5 <- lm(Abundance ~ canopy_cover + av_slope + trees_over_3m + av_litter_depth, data=data_scaled)
+summary(m5)
+
+### Gráficos de coeficientes, ESTIMA LOS INTERVALOS DE CONFIANZA DE MANERA ROBUSTA (robust) - Gráficas sobre significancia
+library(jtools)
+plot_summs(m5, robust = TRUE)
+
+###plot partial regression### Plotear la profundidad de la hojarasca, teniendo en cuenta que las otras variables son constantes, y los residuales parciales. 
+#Me da en negativo, porque son los valores estandarizados
+effect_plot(m5, pred = av_litter_depth, partial.residuals = TRUE, interval = TRUE, plot.points = TRUE, jitter = 0.05)
+
+##Modelo con las variables no estandarizadas
+effect_plot(m4, pred = av_litter_depth, partial.residuals = TRUE, interval = TRUE, plot.points = TRUE, jitter = 0.05)
+
+avPlots(m4) #Da las regresiones parciales para cada una de las variables (es decir, que las demás variables son constantes).
+
+### Selección de modelo ###
+library(MASS)
+mfull <- lm(Abundance ~ canopy_cover + av_slope + trees_over_3m + av_litter_depth, data=data_scaled)
+step <- stepAIC(mfull, trace = FALSE)
+step$anova
+step
+
+# Selección basada en AICc y BIC
+library(MuMIn)
+options(na.action = "na.fail")
+model_selection <- dredge(mfull, rank = "AICc") #Ranquearlos modelos por el AICc (FUNCIÓN DREDGE)
+print(model_selection)
+
+#Mejor modelo basado en AICc
+best_model <- get.models(model_selection, subset = 1)[[1]]
+summary(best_model)
+
+### Cálculo de R-cuadrado y contribución de variables ### ###R-squares### Calcular los R cuadrado parciales. En este caso se sabemos que el mejor modelo es la profundidad de hojarasca, 
+pero para este ejercicio se usará el modelo que incluye todas las variables, porque nuestroo mejor modelo sólo tiene una variable. No es lo correcto, pero es para el ejecicio.
+
+library(rsq)
+rsq(mfull)
+rsq.partial(mfull)
+
+# Partial R-squared for each predictor variable. 
+partial_rsq <- rsq.partial(mfull)
+print(partial_rsq)
+
+####variable contribution## Hace todas las combinaciones del orden de las variaBles, para ver cuál es el mejor R-squared. Serían los R-squared
+
+library(relaimpo)
+importance <- calc.relimp(mfull, type = "lmg")
+print(importance)
